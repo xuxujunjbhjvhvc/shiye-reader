@@ -331,6 +331,27 @@ try {
     assert.ok(Number(await page.locator("#progress").inputValue()) > fraction);
     await back();
   });
+  await check("整片留白可翻页，侧栏与窗口变化后仍可定位", async () => {
+    await open("安静的阅读");
+    await mode("paginated");
+    const pageRect = await page.locator("#book-viewport").boundingBox();
+    const label = await page.locator("#page-label").textContent();
+    await page.mouse.click(
+      pageRect.x + pageRect.width - 15,
+      pageRect.y + pageRect.height / 2,
+    );
+    assert.notEqual(await page.locator("#page-label").textContent(), label);
+    await page.locator("#contents").click();
+    await page.waitForTimeout(200);
+    await page.locator("[data-toc]").last().click();
+    assert.ok(Number(await page.locator("#progress").inputValue()) > 50);
+    await page.locator("#close-panel").click();
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.waitForTimeout(250);
+    assert.ok(Number(await page.locator("#progress").inputValue()) > 50);
+    await back();
+    await page.setViewportSize({ width: 1280, height: 880 });
+  });
   await check("PDF 连续滚动、定位与翻页切换", async () => {
     await open("日常的诗意");
     await mode("scroll");
@@ -389,13 +410,11 @@ try {
     await back();
   });
   await check("损坏 EPUB 导入后可继续操作", async () => {
-    await page
-      .locator("#files")
-      .setInputFiles({
-        name: "损坏.epub",
-        mimeType: "application/epub+zip",
-        buffer: Buffer.from("invalid archive"),
-      });
+    await page.locator("#files").setInputFiles({
+      name: "损坏.epub",
+      mimeType: "application/epub+zip",
+      buffer: Buffer.from("invalid archive"),
+    });
     await page.getByRole("heading", { name: "部分书籍导入失败" }).waitFor();
     await page.locator("#close-dialog").click();
     assert.equal(await page.locator(".book-card").count(), 7);

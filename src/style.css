@@ -1784,3 +1784,10 @@ body.dragging::after {
     opacity: 0.25;
   }
 }
+
+.page-turn-left {
+  width: var(--turn-left, 60px);
+}
+.page-turn-right {
+  width: var(--turn-right, 60px);
+}

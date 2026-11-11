@@ -315,7 +315,7 @@ function bookDialog(id) {
 function settingsDialog() {
   dialog(
     "偏好与备份",
-    `<div class="settings-section"><h3>阅读外观</h3>${themeOptions()}<p>外观设置同时应用于书库和阅读页面。</p></div><div class="settings-section"><h3>书库备份</h3><p>将原书、书单、书签和阅读进度一起导出为 ZIP 文件。</p><div class="dialog-buttons"><button class="secondary" id="backup">${icon("download", 16)} 导出备份</button><button class="secondary" id="restore-backup">${icon("upload", 16)} 恢复备份</button></div><small>恢复时按书籍 ID 合并，同一本书使用备份中的记录。</small></div>${collections.length ? `<div class="settings-section"><h3>管理书单</h3>${collections.map((item) => `<div class="manage-collection"><span>${escape(item.name)}</span><button class="text-button" data-remove-collection="${item.id}">删除书单</button></div>`).join("")}</div>` : ""}<div class="settings-section about"><span class="brand-mark">${icon("book-open", 24)}</span><div><h3>拾页 1.1</h3><p>为专注阅读而做。Windows 本地阅读器。</p><small>快捷键 · Ctrl O 导入 · Ctrl K 搜索 · F11 全屏<br>阅读时 ← → 翻页 · Ctrl F 书内搜索 · Esc 返回</small></div></div>`,
+    `<div class="settings-section"><h3>阅读外观</h3>${themeOptions()}<p>外观设置同时应用于书库和阅读页面。</p></div><div class="settings-section"><h3>书库备份</h3><p>将原书、书单、书签和阅读进度一起导出为 ZIP 文件。</p><div class="dialog-buttons"><button class="secondary" id="backup">${icon("download", 16)} 导出备份</button><button class="secondary" id="restore-backup">${icon("upload", 16)} 恢复备份</button></div><small>恢复时按书籍 ID 合并，同一本书使用备份中的记录。</small></div>${collections.length ? `<div class="settings-section"><h3>管理书单</h3>${collections.map((item) => `<div class="manage-collection"><span>${escape(item.name)}</span><button class="text-button" data-remove-collection="${item.id}">删除书单</button></div>`).join("")}</div>` : ""}<div class="settings-section about"><span class="brand-mark">${icon("book-open", 24)}</span><div><h3>拾页 1.1.1</h3><p>为专注阅读而做。Windows 本地阅读器。</p><small>快捷键 · Ctrl O 导入 · Ctrl K 搜索 · F11 全屏<br>阅读时 ← → 翻页 · Ctrl F 书内搜索 · Esc 返回</small></div></div>`,
     (el) => {
       bindThemes(el);
       $("#backup", el).onclick = () => backupLibrary();
@@ -686,7 +686,15 @@ async function openBook(id) {
     if (reader !== session) return;
     $("#loading")?.remove();
     session.ready = true;
+    session.zoneObserver = new ResizeObserver(() => {
+      if (reader !== session) return;
+      updateTurnZones();
+      if (session.textReady) queueTextLayout();
+    });
+    session.zoneObserver.observe($("#reader-canvas"));
+    session.zoneObserver.observe($("#book-viewport"));
     syncReadingMode();
+    updateTurnZones();
     book.lastRead = Date.now();
     await savePosition();
   } catch (error) {
@@ -749,6 +757,7 @@ async function closeReader() {
   reader = null;
   activePanel = "";
   current.observer?.disconnect();
+  current.zoneObserver?.disconnect();
   $$(".document-page img").forEach((image) => URL.revokeObjectURL(image.src));
   current.epub?.destroy();
   await current.pdf?.destroy();
@@ -953,6 +962,7 @@ async function renderPdfPage() {
     $("#reading-stage").scrollTop = 0;
     session.book.position = session.page;
     updateDocumentProgress();
+    updateTurnZones();
   } finally {
     session.busy = false;
   }
@@ -1132,9 +1142,11 @@ async function renderComicPage() {
     $("#book-viewport").className = "comic-viewport";
     $("#book-viewport").innerHTML =
       `<img class="comic-page" src="${url}" alt="第 ${session.page} 页">`;
+    $(".comic-page").onload = updateTurnZones;
     $("#reading-stage").scrollTop = 0;
     session.book.position = session.page;
     updateDocumentProgress();
+    updateTurnZones();
   } finally {
     session.busy = false;
   }
@@ -1222,6 +1234,32 @@ async function openText(data, session) {
   );
   session.textReady = true;
   layoutText(Number(session.book.position) || 0);
+}
+function updateTurnZones() {
+  if (!reader) return;
+  const canvas = $("#reader-canvas");
+  const viewport = $("#book-viewport");
+  if (!canvas || !viewport) return;
+  let content = viewport;
+  let padding = reader.textReady ? 40 : 30;
+  if (reader.pdf) {
+    content = $(".pdf-page") || viewport;
+    padding = 0;
+  } else if (reader.images) {
+    const image = $(".comic-page");
+    content = image?.naturalWidth ? image : viewport;
+    padding = image?.naturalWidth ? 0 : 25;
+  }
+  const bounds = canvas.getBoundingClientRect();
+  const page = content.getBoundingClientRect();
+  canvas.style.setProperty(
+    "--turn-left",
+    `${Math.max(0, page.left + padding - bounds.left)}px`,
+  );
+  canvas.style.setProperty(
+    "--turn-right",
+    `${Math.max(0, bounds.right - page.right + padding)}px`,
+  );
 }
 function syncReadingMode() {
   if (!reader) return;
@@ -1317,6 +1355,7 @@ function layoutText(position) {
     stage.onscroll = updateTextProgress;
     updateTextProgress();
   }
+  updateTurnZones();
 }
 function updateTextProgress() {
   if (!reader?.textReady || prefs.mode !== "scroll") return;
