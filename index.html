@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="./favicon.ico" />
+    <meta name="color-scheme" content="light dark" />
+    <title>拾页 · 阅读，让时间慢下来</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <input
+      id="files"
+      type="file"
+      multiple
+      accept=".epub,.pdf,.txt,.md,.markdown,.fb2,.cbz"
+      hidden
+    /><input id="restore" type="file" accept=".zip" hidden />
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

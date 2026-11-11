@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.build/
+.test-results/
+**/Data/
+*.zip
+*.log
+.env
+.env.*
+prepare.py

@@ -1,0 +1,28 @@
+{
+  "name": "shiye-reader",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File native/Build.ps1",
+    "test": "node test.mjs",
+    "test:native": "node native-test.mjs"
+  },
+  "dependencies": {
+    "dompurify": "3.3.1",
+    "epubjs": "0.3.93",
+    "jszip": "3.10.1",
+    "lucide": "0.468.0",
+    "marked": "15.0.12",
+    "pdfjs-dist": "4.10.38"
+  },
+  "devDependencies": {
+    "vite": "6.4.1",
+    "playwright": "1.61.1"
+  },
+  "description": "A lightweight, offline Windows reader for EPUB, PDF and more.",
+  "license": "MIT",
+  "author": "xuxujunjbhjvhvc"
+}
