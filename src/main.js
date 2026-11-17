@@ -722,10 +722,20 @@ function applyReadingStyle() {
   );
   if (reader?.rendition) {
     const colors = themeColors();
+    reader.rendition.getContents().forEach((contents) => {
+      const doc = contents.document;
+      let style = doc.querySelector("style[data-shiye-theme]");
+      if (!style) {
+        style = doc.createElement("style");
+        style.dataset.shiyeTheme = "";
+        (doc.head || doc.documentElement).append(style);
+      }
+      style.textContent = `html, body { background: ${colors.bg} !important; color: ${colors.text} !important; }`;
+    });
     reader.rendition.themes.default({
       body: {
         color: `${colors.text} !important`,
-        background: "transparent !important",
+        background: `${colors.bg} !important`,
         "font-family":
           prefs.font === "sans"
             ? '"Microsoft YaHei", sans-serif !important'
@@ -811,6 +821,14 @@ async function openEpub(data, session) {
     allowScriptedContent: false,
   });
   applyReadingStyle();
+  session.rendition.hooks.content.register((contents) => {
+    const doc = contents.document;
+    const style = doc.createElement("style");
+    style.dataset.shiyeTheme = "";
+    (doc.head || doc.documentElement).append(style);
+    const colors = themeColors();
+    style.textContent = `html, body { background: ${colors.bg} !important; color: ${colors.text} !important; }`;
+  });
   session.rendition.on("relocated", (location) => {
     if (reader !== session) return;
     session.book.position = location.start.cfi;
@@ -947,24 +965,31 @@ async function createPdfPage(session, number) {
 }
 async function renderPdfPage() {
   const session = reader;
-  if (!session?.pdf || session.busy) return;
+  if (!session?.pdf) return;
   if (prefs.mode === "scroll") {
     if (!session.scrollLayout) await renderDocumentScroll(session);
-    else scrollToDocumentPage(session.page);
+    else if (session.navigateToPage) scrollToDocumentPage(session.page);
+    session.navigateToPage = false;
     return;
   }
+  if (session.busy) { session.pendingRender = true; return; }
   session.busy = true;
+  const targetPage = session.page;
   try {
-    const wrapper = await createPdfPage(session, session.page);
+    const wrapper = await createPdfPage(session, targetPage);
     if (reader !== session || !wrapper) return;
     $("#book-viewport").replaceChildren(wrapper);
     $("#book-viewport").className = "pdf-viewport";
     $("#reading-stage").scrollTop = 0;
-    session.book.position = session.page;
+    session.book.position = targetPage;
     updateDocumentProgress();
     updateTurnZones();
   } finally {
     session.busy = false;
+    if (reader === session && (session.pendingRender || session.page !== targetPage)) {
+      session.pendingRender = false;
+      void renderPdfPage();
+    }
   }
 }
 function updateDocumentProgress() {
@@ -1005,6 +1030,7 @@ async function renderDocumentScroll(session) {
     return placeholder;
   });
   session.scrollLayout = true;
+  stage.style.overflowAnchor = "none";
   async function loadPage(element) {
     if (element.loading) return element.loading;
     if (element.childElementCount) return;
@@ -1038,8 +1064,11 @@ async function renderDocumentScroll(session) {
         const height = session.pdf
           ? parseFloat(content.style.height)
           : (width * content.naturalHeight) / content.naturalWidth;
+        const oldHeight = element.offsetHeight;
+        const wasAbove = element.getBoundingClientRect().top < stage.getBoundingClientRect().top;
         element.style.width = `${contentWidth}px`;
         element.style.height = `${height}px`;
+        if (wasAbove && oldHeight !== element.offsetHeight) stage.scrollTop += element.offsetHeight - oldHeight;
       } catch (error) {
         if (reader === session && version === session.layoutVersion) {
           element.textContent = `页面加载失败 · ${error.message}`;
@@ -1121,18 +1150,21 @@ async function openComic(data, session) {
 }
 async function renderComicPage() {
   const session = reader;
-  if (!session?.images || session.busy) return;
+  if (!session?.images) return;
   if (prefs.mode === "scroll") {
     if (!session.scrollLayout) await renderDocumentScroll(session);
-    else scrollToDocumentPage(session.page);
+    else if (session.navigateToPage) scrollToDocumentPage(session.page);
+    session.navigateToPage = false;
     return;
   }
+  if (session.busy) { session.pendingRender = true; return; }
   session.busy = true;
+  const targetPage = session.page;
   try {
     session.urls.forEach((url) => URL.revokeObjectURL(url));
     session.urls = [];
     const url = URL.createObjectURL(
-      await session.images[session.page - 1].async("blob"),
+      await session.images[targetPage - 1].async("blob"),
     );
     session.urls.push(url);
     if (reader !== session) {
@@ -1141,14 +1173,18 @@ async function renderComicPage() {
     }
     $("#book-viewport").className = "comic-viewport";
     $("#book-viewport").innerHTML =
-      `<img class="comic-page" src="${url}" alt="第 ${session.page} 页">`;
+      `<img class="comic-page" src="${url}" alt="第 ${targetPage} 页">`;
     $(".comic-page").onload = updateTurnZones;
     $("#reading-stage").scrollTop = 0;
-    session.book.position = session.page;
+    session.book.position = targetPage;
     updateDocumentProgress();
     updateTurnZones();
   } finally {
     session.busy = false;
+    if (reader === session && (session.pendingRender || session.page !== targetPage)) {
+      session.pendingRender = false;
+      void renderComicPage();
+    }
   }
 }
 async function openText(data, session) {
@@ -1293,6 +1329,7 @@ async function setReadingMode(mode) {
       await session.rendition.display(position);
     } else if (session.pdf) {
       session.scrollLayout = false;
+      session.navigateToPage = true;
       await renderPdfPage();
     } else if (session.images) {
       session.scrollLayout = false;
@@ -1400,18 +1437,17 @@ async function turnPage(direction) {
         ? session.rendition.next()
         : session.rendition.prev());
     else if (session.pdf) {
-      if (session.busy) return;
       session.page = Math.max(
         1,
         Math.min(session.pdf.numPages, session.page + direction),
       );
       await renderPdfPage();
     } else if (session.images) {
-      if (session.busy) return;
       session.page = Math.max(
         1,
         Math.min(session.images.length, session.page + direction),
       );
+      session.navigateToPage = true;
       await renderComicPage();
     } else if (prefs.mode === "paginated")
       goToTextPage(session.textPage + direction);
@@ -1441,10 +1477,12 @@ async function seek(fraction) {
   } else if (reader.pdf) {
     if (reader.busy) return;
     reader.page = Math.max(1, Math.ceil(fraction * reader.pdf.numPages));
+    reader.navigateToPage = true;
     await renderPdfPage();
   } else if (reader.images) {
     if (reader.busy) return;
     reader.page = Math.max(1, Math.ceil(fraction * reader.images.length));
+    reader.navigateToPage = true;
     await renderComicPage();
   } else if (prefs.mode === "paginated")
     goToTextPage(Math.round(fraction * (reader.textPages - 1)));
