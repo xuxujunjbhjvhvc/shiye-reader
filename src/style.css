@@ -1251,9 +1251,10 @@ body.dragging::after {
 .epub-container {
   scrollbar-width: none;
 }
-.epub-view {
+.epub-view, .epub-container, #book-viewport:has(.epub-container) {
   background: var(--reading-bg);
 }
+.reading-stage { overflow-anchor: none; }
 #book-viewport.text-viewport {
   height: auto;
   min-height: 100%;
