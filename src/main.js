@@ -90,6 +90,7 @@ const defaults = {
   line: 1.9,
   width: 760,
   mode: "paginated",
+  spread: false,
   sort: "recent",
   view: "grid",
 };
@@ -637,9 +638,13 @@ async function thumbnail(blob) {
   return canvas.toDataURL("image/jpeg", 0.75);
 }
 
+function usesTwoPages() {
+  return prefs.mode === "paginated" && prefs.spread === true && window.innerWidth >= 980;
+}
+
 function readerShell(book) {
   $("#app").innerHTML =
-    `<div class="reader-shell"><header class="reader-toolbar"><div class="reader-left">${button("chevron-left", "返回书库（Esc）", "back")}<span class="toolbar-divider"></span>${button("panel-left", "目录与书签", "contents")}<div class="reader-title"><strong>${escape(book.title)}</strong><small>${escape(book.author || book.format.toUpperCase())}</small></div></div><div class="reader-actions"><div class="reading-mode-switch" role="group" aria-label="阅读模式"><button id="mode-paginated" aria-pressed="false">翻页</button><button id="mode-scroll" aria-pressed="false">滚动</button></div>${button("search", "书内搜索（Ctrl F）", "search-reader")}${button("bookmark", "添加书签", "bookmark")}${button("type", "阅读外观", "appearance")}${button("maximize", "全屏（F11）", "fullscreen")}</div></header><div class="reader-body"><aside id="reader-panel" class="reader-panel" hidden></aside><div class="reader-canvas" id="reader-canvas"><main class="reading-stage" id="reading-stage"><div id="book-viewport"></div><div class="loading" id="loading"><span class="spinner"></span>正在打开书籍…</div></main><button class="page-turn-zone page-turn-left" id="prev" aria-label="上一页" title="点击左侧留白翻到上一页">${icon("chevron-left", 25)}</button><button class="page-turn-zone page-turn-right" id="next" aria-label="下一页" title="点击右侧留白翻到下一页">${icon("chevron-right", 25)}</button></div></div><footer class="reader-footer"><div class="reading-progress"><span id="chapter-label">阅读中</span><input id="progress" type="range" min="0" max="100" step="0.1" value="${book.progress || 0}" aria-label="阅读进度"><span id="page-label">${Math.round(book.progress || 0)}%</span></div></footer></div>`;
+    `<div class="reader-shell"><header class="reader-toolbar"><div class="reader-left">${button("chevron-left", "返回书库（Esc）", "back")}<span class="toolbar-divider"></span>${button("panel-left", "目录与书签", "contents")}<div class="reader-title"><strong>${escape(book.title)}</strong><small>${escape(book.author || book.format.toUpperCase())}</small></div></div><div class="reader-actions"><div class="reading-mode-switch" role="group" aria-label="阅读模式"><button id="mode-paginated" aria-pressed="false">翻页</button><button id="mode-scroll" aria-pressed="false">滚动</button><button id="mode-spread" aria-pressed="false" title="宽屏翻页模式下显示双页">双页</button></div>${button("search", "书内搜索（Ctrl F）", "search-reader")}${button("bookmark", "添加书签", "bookmark")}${button("type", "阅读外观", "appearance")}${button("maximize", "全屏（F11）", "fullscreen")}</div></header><div class="reader-body"><aside id="reader-panel" class="reader-panel" hidden></aside><div class="reader-canvas" id="reader-canvas"><main class="reading-stage" id="reading-stage"><div id="book-viewport"></div><div class="loading" id="loading"><span class="spinner"></span>正在打开书籍…</div></main><button class="page-turn-zone page-turn-left" id="prev" aria-label="上一页" title="点击左侧留白翻到上一页">${icon("chevron-left", 25)}</button><button class="page-turn-zone page-turn-right" id="next" aria-label="下一页" title="点击右侧留白翻到下一页">${icon("chevron-right", 25)}</button></div></div><footer class="reader-footer"><div class="reading-progress"><span id="chapter-label">阅读中</span><input id="progress" type="range" min="0" max="100" step="0.1" value="${book.progress || 0}" aria-label="阅读进度"><span id="page-label">${Math.round(book.progress || 0)}%</span></div></footer></div>`;
   $("#back").onclick = closeReader;
   $("#contents").onclick = () => togglePanel("contents");
   $("#search-reader").onclick = () => togglePanel("search");
@@ -650,6 +655,7 @@ function readerShell(book) {
   $("#next").onclick = () => turnPage(1);
   $("#mode-paginated").onclick = () => setReadingMode("paginated");
   $("#mode-scroll").onclick = () => setReadingMode("scroll");
+  $("#mode-spread").onclick = toggleSpread;
   syncReadingMode();
   $("#progress").onchange = (event) => seek(Number(event.target.value) / 100);
   refreshIcons();
@@ -815,7 +821,8 @@ async function openEpub(data, session) {
   session.rendition = session.epub.renderTo("book-viewport", {
     width: "100%",
     height: "100%",
-    spread: "none",
+    spread: usesTwoPages() ? "auto" : "none",
+    minSpreadWidth: 860,
     manager: "continuous",
     flow: prefs.mode === "scroll" ? "scrolled-continuous" : "paginated",
     allowScriptedContent: false,
@@ -928,11 +935,11 @@ async function openPdf(data, session) {
   session.toc = outline ? collect(outline) : [];
   await renderPdfPage();
 }
-async function createPdfPage(session, number) {
+async function createPdfPage(session, number, targetWidth) {
   const page = await session.pdf.getPage(number);
   if (reader !== session) return null;
   const unit = page.getViewport({ scale: 1 });
-  const available = $("#reading-stage").clientWidth - 200;
+  const available = targetWidth || $("#reading-stage").clientWidth - 200;
   const scale = Math.min(available / unit.width, 1.6) * (session.zoom || 1);
   const viewport = page.getViewport({ scale });
   const wrapper = document.createElement("div");
@@ -976,10 +983,27 @@ async function renderPdfPage() {
   session.busy = true;
   const targetPage = session.page;
   try {
-    const wrapper = await createPdfPage(session, targetPage);
-    if (reader !== session || !wrapper) return;
-    $("#book-viewport").replaceChildren(wrapper);
-    $("#book-viewport").className = "pdf-viewport";
+    const spread = usesTwoPages();
+    const first = spread ? Math.floor((targetPage - 1) / 2) * 2 + 1 : targetPage;
+    const numbers = [first];
+    if (spread && first + 1 <= session.pdf.numPages) numbers.push(first + 1);
+    const width = spread ? Math.max(160, ($("#reading-stage").clientWidth - 200) / 2 - 18) : undefined;
+    const pages = [];
+    for (const number of numbers) {
+      const wrapper = await createPdfPage(session, number, width);
+      if (reader !== session || !wrapper) return;
+      pages.push(wrapper);
+    }
+    const viewport = $("#book-viewport");
+    if (spread) {
+      const container = document.createElement("div");
+      container.className = "pdf-spread";
+      container.replaceChildren(...pages);
+      viewport.replaceChildren(container);
+    } else {
+      viewport.replaceChildren(...pages);
+    }
+    viewport.className = "pdf-viewport";
     $("#reading-stage").scrollTop = 0;
     session.book.position = targetPage;
     updateDocumentProgress();
@@ -996,9 +1020,12 @@ function updateDocumentProgress() {
   const session = reader;
   const count = session.pdf?.numPages || session.images?.length || 1;
   session.book.position = session.page;
-  updateProgress((session.page / count) * 100, `${session.page} / ${count} 页`);
-  $("#prev").disabled = session.page === 1;
-  $("#next").disabled = session.page === count;
+  const first = usesTwoPages() ? Math.floor((session.page - 1) / 2) * 2 + 1 : session.page;
+  const last = Math.min(count, first + (usesTwoPages() ? 1 : 0));
+  const label = first === last ? `${first} / ${count} 页` : `${first}–${last} / ${count} 页`;
+  updateProgress((last / count) * 100, label);
+  $("#prev").disabled = first === 1;
+  $("#next").disabled = last === count;
 }
 async function renderDocumentScroll(session) {
   session.observer?.disconnect();
@@ -1161,24 +1188,46 @@ async function renderComicPage() {
   session.busy = true;
   const targetPage = session.page;
   try {
-    session.urls.forEach((url) => URL.revokeObjectURL(url));
-    session.urls = [];
-    const url = URL.createObjectURL(
-      await session.images[targetPage - 1].async("blob"),
-    );
-    session.urls.push(url);
-    if (reader !== session) {
-      URL.revokeObjectURL(url);
-      return;
+    const spread = usesTwoPages();
+    const first = spread ? Math.floor((targetPage - 1) / 2) * 2 + 1 : targetPage;
+    const numbers = [first];
+    if (spread && first + 1 <= session.images.length) numbers.push(first + 1);
+    const urls = [];
+    const pages = [];
+    try {
+      for (const number of numbers) {
+        const blob = await session.images[number - 1].async("blob");
+        if (reader !== session) return;
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        const image = document.createElement("img");
+        image.className = "comic-page";
+        image.src = url;
+        image.alt = `第 ${number} 页`;
+        image.onload = updateTurnZones;
+        pages.push(image);
+      }
+      if (reader !== session) return;
+      const viewport = $("#book-viewport");
+      viewport.className = "comic-viewport";
+      if (spread) {
+        const container = document.createElement("div");
+        container.className = "comic-spread";
+        container.replaceChildren(...pages);
+        viewport.replaceChildren(container);
+      } else {
+        viewport.replaceChildren(...pages);
+      }
+      session.urls.forEach((url) => URL.revokeObjectURL(url));
+      session.urls = urls;
+      $("#reading-stage").scrollTop = 0;
+      session.book.position = targetPage;
+      updateDocumentProgress();
+      updateTurnZones();
+    } catch (error) {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      throw error;
     }
-    $("#book-viewport").className = "comic-viewport";
-    $("#book-viewport").innerHTML =
-      `<img class="comic-page" src="${url}" alt="第 ${targetPage} 页">`;
-    $(".comic-page").onload = updateTurnZones;
-    $("#reading-stage").scrollTop = 0;
-    session.book.position = targetPage;
-    updateDocumentProgress();
-    updateTurnZones();
   } finally {
     session.busy = false;
     if (reader === session && (session.pendingRender || session.page !== targetPage)) {
@@ -1279,11 +1328,11 @@ function updateTurnZones() {
   let content = viewport;
   let padding = reader.textReady ? 40 : 30;
   if (reader.pdf) {
-    content = $(".pdf-page") || viewport;
+    content = $(".pdf-spread") || $(".pdf-page") || viewport;
     padding = 0;
   } else if (reader.images) {
     const image = $(".comic-page");
-    content = image?.naturalWidth ? image : viewport;
+    content = $(".comic-spread") || (image?.naturalWidth ? image : viewport);
     padding = image?.naturalWidth ? 0 : 25;
   }
   const bounds = canvas.getBoundingClientRect();
@@ -1304,6 +1353,39 @@ function syncReadingMode() {
     const control = $("#mode-" + mode);
     control.setAttribute("aria-pressed", String(mode === prefs.mode));
     control.disabled = !reader.ready || Boolean(reader.switching);
+  }
+  const spread = $("#mode-spread");
+  spread.setAttribute("aria-pressed", String(Boolean(prefs.spread)));
+  spread.disabled = !reader.ready || Boolean(reader.switching) || prefs.mode !== "paginated";
+}
+async function toggleSpread() {
+  const session = reader;
+  if (!session?.ready || session.busy || session.switching || prefs.mode !== "paginated") return;
+  const position = session.book.position;
+  session.switching = true;
+  prefs.spread = !prefs.spread;
+  syncReadingMode();
+  try {
+    if (session.rendition) {
+      session.rendition.spread(usesTwoPages() ? "auto" : "none", 860);
+      await session.rendition.display(position);
+    } else if (session.pdf) {
+      await renderPdfPage();
+    } else if (session.images) {
+      await renderComicPage();
+    } else {
+      layoutText(Number(position) || 0);
+    }
+    await savePreferences();
+    await savePosition();
+  } catch (error) {
+    prefs.spread = !prefs.spread;
+    toast("切换双页失败 · " + error.message);
+  } finally {
+    if (reader === session) {
+      session.switching = false;
+      syncReadingMode();
+    }
   }
 }
 async function setReadingMode(mode) {
@@ -1326,6 +1408,7 @@ async function setReadingMode(mode) {
       session.rendition.flow(
         mode === "scroll" ? "scrolled-continuous" : "paginated",
       );
+      if (mode === "paginated") session.rendition.spread(usesTwoPages() ? "auto" : "none", 860);
       await session.rendition.display(position);
     } else if (session.pdf) {
       session.scrollLayout = false;
@@ -1367,7 +1450,9 @@ function layoutText(position) {
   viewport.onscroll = null;
   if (prefs.mode === "paginated") {
     stage.scrollTop = 0;
-    article.style.columnWidth = `${viewport.clientWidth - 80}px`;
+    const gap = usesTwoPages() ? 28 : 80;
+    article.style.columnGap = `${gap}px`;
+    article.style.columnWidth = `${usesTwoPages() ? (viewport.clientWidth - 80 - gap) / 2 : viewport.clientWidth - 80}px`;
     session.textPages = Math.max(
       1,
       Math.ceil((article.scrollWidth - 1) / viewport.clientWidth),
@@ -1386,6 +1471,7 @@ function layoutText(position) {
     $("#next").disabled = session.textPage === session.textPages - 1;
   } else {
     article.style.columnWidth = "auto";
+    article.style.columnGap = "";
     viewport.scrollLeft = 0;
     stage.scrollTop =
       position * Math.max(0, stage.scrollHeight - stage.clientHeight);
@@ -1439,14 +1525,14 @@ async function turnPage(direction) {
     else if (session.pdf) {
       session.page = Math.max(
         1,
-        Math.min(session.pdf.numPages, session.page + direction),
+        Math.min(session.pdf.numPages, session.page + direction * (usesTwoPages() ? 2 : 1)),
       );
       session.navigateToPage = true;
       await renderPdfPage();
     } else if (session.images) {
       session.page = Math.max(
         1,
-        Math.min(session.images.length, session.page + direction),
+        Math.min(session.images.length, session.page + direction * (usesTwoPages() ? 2 : 1)),
       );
       session.navigateToPage = true;
       await renderComicPage();
