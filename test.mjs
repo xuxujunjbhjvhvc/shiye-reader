@@ -460,12 +460,14 @@ try {
     await back();
     await open("日常的诗意");
     await mode("paginated");
+    await page.locator("#progress").fill("0"); // Previous tests saved page 3.
     await page.waitForFunction(() => document.querySelectorAll(".pdf-spread .pdf-page").length === 2);
     await page.locator("#next").click();
     await page.getByText("3 / 3 页", { exact: true }).waitFor();
     await back();
     await open("四季画册");
     await mode("paginated");
+    await page.locator("#progress").fill("0"); // Restore the first spread before asserting two pages.
     await page.waitForFunction(() => document.querySelectorAll(".comic-spread .comic-page").length === 2);
     await back();
     await open("把时间留给阅读");
