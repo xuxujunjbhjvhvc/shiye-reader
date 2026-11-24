@@ -1441,6 +1441,7 @@ async function turnPage(direction) {
         1,
         Math.min(session.pdf.numPages, session.page + direction),
       );
+      session.navigateToPage = true;
       await renderPdfPage();
     } else if (session.images) {
       session.page = Math.max(
@@ -1475,12 +1476,10 @@ async function seek(fraction) {
       await reader.rendition.display(reader.epub.spine.get(index).href);
     }
   } else if (reader.pdf) {
-    if (reader.busy) return;
     reader.page = Math.max(1, Math.ceil(fraction * reader.pdf.numPages));
     reader.navigateToPage = true;
     await renderPdfPage();
   } else if (reader.images) {
-    if (reader.busy) return;
     reader.page = Math.max(1, Math.ceil(fraction * reader.images.length));
     reader.navigateToPage = true;
     await renderComicPage();
