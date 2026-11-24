@@ -1792,3 +1792,26 @@ body.dragging::after {
 .page-turn-right {
   width: var(--turn-right, 60px);
 }
+
+/* Optional facing-page pagination. Narrow windows keep the existing single-page layout. */
+.pdf-spread,
+.comic-spread {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 18px;
+  width: 100%;
+}
+.pdf-spread .pdf-page {
+  flex-shrink: 0;
+}
+.comic-spread .comic-page {
+  width: calc(50% - 9px);
+  max-height: calc(100dvh - 205px);
+  object-fit: contain;
+}
+.reading-mode-switch #mode-spread[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 3px #0001;
+}
