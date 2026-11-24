@@ -1,0 +1,37 @@
+name: Reader CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Playwright browser and Linux prerequisites
+        run: npx playwright install --with-deps chromium
+      - name: Build offline reader
+        run: npm run build
+      - name: Run browser regression tests
+        run: npm test
+      - name: Upload browser test evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-test-evidence
+          path: .test-results/
+          if-no-files-found: ignore
