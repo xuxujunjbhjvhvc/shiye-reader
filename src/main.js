@@ -718,7 +718,7 @@ function applyReadingStyle() {
   if (!stage) return;
   stage.style.setProperty("--reading-size", `${prefs.size}px`);
   stage.style.setProperty("--reading-line", prefs.line);
-  stage.style.setProperty("--reading-width", `${prefs.width}px`);
+  stage.style.setProperty("--reading-width", `${usesTwoPages() ? Math.max(1150, prefs.width * 1.6) : prefs.width}px`);
   if (reader?.textReady) queueTextLayout();
   stage.style.setProperty(
     "--reading-font",
@@ -1364,6 +1364,7 @@ async function toggleSpread() {
   const position = session.book.position;
   session.switching = true;
   prefs.spread = !prefs.spread;
+  applyReadingStyle();
   syncReadingMode();
   try {
     if (session.rendition) {
@@ -1399,6 +1400,7 @@ async function setReadingMode(mode) {
   session.layoutVersion = (session.layoutVersion || 0) + 1;
   const position = session.book.position;
   prefs.mode = mode;
+  applyReadingStyle();
   syncReadingMode();
   try {
     session.observer?.disconnect();
