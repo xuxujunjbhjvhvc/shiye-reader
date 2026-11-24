@@ -448,6 +448,34 @@ try {
     await page.getByText("3 / 3 页", { exact: true }).waitFor();
     await back();
   });
+  await check("Issue #3 双页视图：文本、PDF、CBZ 与设置记忆", async () => {
+    await open("安静的阅读");
+    await mode("paginated");
+    await page.locator("#mode-spread").click();
+    assert.equal(await page.locator("#mode-spread").getAttribute("aria-pressed"), "true");
+    const widths = await page.locator(".text-book").evaluate((el) => ({
+      column: parseFloat(el.style.columnWidth),
+      viewport: document.querySelector("#book-viewport").clientWidth,
+    }));
+    assert.ok(widths.column > 0 && widths.column < widths.viewport / 2);
+    await back();
+    await open("日常的诗意");
+    await mode("paginated");
+    await page.waitForFunction(() => document.querySelectorAll(".pdf-spread .pdf-page").length === 2);
+    await page.locator("#next").click();
+    await page.getByText("3 / 3 页", { exact: true }).waitFor();
+    await back();
+    await open("四季画册");
+    await mode("paginated");
+    await page.waitForFunction(() => document.querySelectorAll(".comic-spread .comic-page").length === 2);
+    await back();
+    await open("把时间留给阅读");
+    await mode("paginated");
+    assert.equal(await page.locator("#mode-spread").getAttribute("aria-pressed"), "true");
+    await page.locator("#mode-spread").click();
+    assert.equal(await page.locator("#mode-spread").getAttribute("aria-pressed"), "false");
+    await back();
+  });
   await check("损坏 EPUB 导入后可继续操作", async () => {
     await page.locator("#files").setInputFiles({
       name: "损坏.epub",
