@@ -35,3 +35,4 @@ jobs:
           name: reader-test-evidence
           path: .test-results/
           if-no-files-found: ignore
+          include-hidden-files: true
