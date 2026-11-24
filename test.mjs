@@ -292,8 +292,7 @@ try {
       stage.x + stage.width - 25,
       stage.y + stage.height / 2,
     );
-    await page.waitForTimeout(150);
-    assert.notEqual(await page.locator("#page-label").textContent(), before);
+    await page.waitForFunction((priorLabel) => document.querySelector("#page-label")?.textContent !== priorLabel, before, { timeout: 5000 });
     const fraction = Number(await page.locator("#progress").inputValue());
     await mode("scroll");
     assert.equal(await page.locator("#next").isVisible(), false);
