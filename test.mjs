@@ -409,6 +409,45 @@ try {
     assert.equal(await page.locator("#page-label").textContent(), "3 / 3 页");
     await back();
   });
+  await check("Issue #2 EPUB 深夜主题应用到章节正文", async () => {
+    await open("把时间留给阅读");
+    await page.locator("#appearance").click();
+    await page.locator('[data-theme="night"]').click();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("iframe")].some((frame) => {
+        const body = frame.contentDocument?.body;
+        return body && getComputedStyle(body).backgroundColor === "rgb(32, 35, 34)";
+      }),
+    );
+    await page.locator('[data-theme="paper"]').click();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("iframe")].some((frame) => {
+        const body = frame.contentDocument?.body;
+        return body && getComputedStyle(body).backgroundColor === "rgb(250, 248, 243)";
+      }),
+    );
+    await back();
+  });
+  await check("Issue #1 PDF 与 CBZ 连续翻页不会丢掉后续操作", async () => {
+    await open("日常的诗意");
+    await mode("paginated");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.getByText("3 / 3 页", { exact: true }).waitFor();
+    await mode("scroll");
+    await page.locator("#progress").fill("34");
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#reading-stage");
+      return el && el.scrollTop > 0;
+    });
+    await back();
+    await open("四季画册");
+    await mode("paginated");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.getByText("3 / 3 页", { exact: true }).waitFor();
+    await back();
+  });
   await check("损坏 EPUB 导入后可继续操作", async () => {
     await page.locator("#files").setInputFiles({
       name: "损坏.epub",
